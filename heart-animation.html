@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Heart Animation</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pacifico&display=swap">
+<style>
+  :root {
+    --bg: #04030a;
+    --ink: #f6e6ee;
+    --ink-dim: #b79aa9;
+    --accent: #ff5c9a;
+    --btn-bg: rgba(255, 92, 154, 0.14);
+    --btn-border: rgba(255, 92, 154, 0.45);
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #04030a; --ink: #f6e6ee; }
+  }
+  :root[data-theme="dark"] { --bg: #04030a; --ink: #f6e6ee; }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: radial-gradient(60% 45% at 50% 48%, rgba(255, 40, 120, 0.16), rgba(255, 40, 120, 0) 70%), var(--bg);
+    color: var(--ink);
+    font-family: "Space Grotesk", "Segoe UI", system-ui, -apple-system, sans-serif;
+    overflow: hidden;
+  }
+  #stage { position: fixed; inset: 0; }
+  .path-source { position: absolute; width: 0; height: 0; }
+  canvas { display: block; width: 100%; height: 100%; }
+  h1 {
+    position: absolute;
+    top: calc(env(safe-area-inset-top, 0px) + 28px);
+    left: 0; right: 0;
+    width: max-content;
+    max-width: 94%;
+    margin: 0 auto;
+    padding: 0.1em 0.3em 0.25em;
+    text-align: center;
+    font-family: "Pacifico", "Brush Script MT", cursive;
+    font-size: clamp(2rem, 9vw, 3.4rem);
+    font-weight: 400;
+    line-height: 1.25;
+    background: linear-gradient(90deg, #ffb3dc, #ff4fa3 30%, #ff1f6d 55%, #ff7ab8 80%, #ffb3dc);
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    filter:
+      drop-shadow(0 0 4px rgba(255, 120, 190, 0.95))
+      drop-shadow(0 0 14px rgba(255, 40, 130, 0.75))
+      drop-shadow(0 0 34px rgba(255, 20, 110, 0.5));
+    pointer-events: none;
+    animation: sheen 6s linear infinite, glow 3.5s ease-in-out infinite;
+  }
+  @keyframes sheen { to { background-position: -200% 0; } }
+  @keyframes glow {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.86; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    h1 { animation: none; }
+  }
+  .bar {
+    position: absolute;
+    left: 0; right: 0;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 28px);
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+  }
+  button {
+    font: inherit;
+    font-size: 0.95rem;
+    color: var(--ink);
+    background: var(--btn-bg);
+    border: 1px solid var(--btn-border);
+    box-shadow: 0 0 12px rgba(255, 60, 140, 0.35), inset 0 0 10px rgba(255, 60, 140, 0.15);
+    border-radius: 999px;
+    padding: 10px 22px;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.2s;
+  }
+  button:hover { background: rgba(255, 92, 154, 0.26); }
+  button:active { transform: scale(0.97); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<h1>Heart Animation</h1>
+
+<!-- Path SVG sumber titik partikel (sama seperti di kode referensi) -->
+<svg class="path-source" width="0" height="0" viewBox="0 0 600 552" aria-hidden="true">
+  <path id="heart-path" d="M300,520 C130,400 24,300 24,185 C24,95 92,40 162,40 C225,40 274,74 300,128 C326,74 375,40 438,40 C508,40 576,95 576,185 C576,300 470,400 300,520 Z" fill="none"/>
+</svg>
+
+<div class="bar">
+  <button id="replay" type="button">Ulangi animasi</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script>
+(function () {
+  var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var stage = document.getElementById("stage");
+
+  // ---------- Scene ----------
+  var scene = new THREE.Scene();
+  var camera = new THREE.PerspectiveCamera(50, 1, 1, 3000);
+  var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setClearColor(0x000000, 0);
+  stage.appendChild(renderer.domElement);
+
+  var group = new THREE.Group();
+  scene.add(group);
+
+  function fitCamera() {
+    var w = stage.clientWidth, h = stage.clientHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    var tan = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+    var needW = 760, needH = 760; // area yang harus muat (hati + sebaran partikel)
+    var dH = needH / (2 * tan);
+    var dW = needW / (2 * tan * camera.aspect);
+    camera.position.set(0, 0, Math.max(dH, dW));
+    camera.updateProjectionMatrix();
+  }
+  window.addEventListener("resize", fitCamera);
+  fitCamera();
+
+  // ---------- Sprite partikel bulat lembut ----------
+  function makeSprite() {
+    var c = document.createElement("canvas");
+    c.width = c.height = 64;
+    var g = c.getContext("2d");
+    var grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grad.addColorStop(0, "rgba(255,255,255,1)");
+    grad.addColorStop(0.35, "rgba(255,255,255,0.85)");
+    grad.addColorStop(1, "rgba(255,255,255,0)");
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(c);
+  }
+
+  // ---------- Titik dari path SVG ----------
+  var path = document.getElementById("heart-path");
+  var length = path.getTotalLength();
+  var CX = 300, CY = 276; // pusat viewBox 600 x 552
+  var STEP = 0.22;
+
+  var vertices = [];
+  var colors = [];
+  var pinkA = new THREE.Color("#ff3d86");
+  var pinkB = new THREE.Color("#ffc2da");
+  var tmp = new THREE.Color();
+
+  for (var i = 0; i < length; i += STEP) {
+    var p = path.getPointAtLength(i);
+    var v = new THREE.Vector3(p.x - CX, -(p.y - CY), 0);
+    v.x += (Math.random() - 0.5) * 30;
+    v.y += (Math.random() - 0.5) * 30;
+    v.z += (Math.random() - 0.5) * 70;
+    v.__i = i;
+    vertices.push(v);
+
+    tmp.copy(pinkA).lerp(pinkB, Math.pow(Math.random(), 1.6));
+    colors.push(tmp.r, tmp.g, tmp.b);
+  }
+
+  var count = vertices.length;
+  var positions = new Float32Array(count * 3);
+  var geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(new Float32Array(colors), 3));
+
+  var material = new THREE.PointsMaterial({
+    size: 5.2,
+    map: makeSprite(),
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.9,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    sizeAttenuation: true
+  });
+  var points = new THREE.Points(geometry, material);
+  group.add(points);
+
+  // ---------- Animasi GSAP ----------
+  var tl, beat, sway;
+
+  function build() {
+    if (tl) tl.kill();
+    if (beat) beat.kill();
+    if (sway) sway.kill();
+    group.scale.set(1, 1, 1);
+    group.rotation.set(0, 0, 0);
+
+    tl = gsap.timeline({
+      onComplete: startIdle
+    });
+
+    var spread = reduceMotion ? 0.0004 : 0.002;
+    for (var k = 0; k < vertices.length; k++) {
+      var vec = vertices[k];
+      // reset ke posisi akhir lalu animasikan dari pusat (sama seperti tl.from di kode referensi)
+      tl.from(vec, {
+        x: 0,
+        y: 0,
+        z: 0,
+        ease: "power2.inOut",
+        duration: reduceMotion ? 1 : gsap.utils.random(2, 5),
+        immediateRender: true
+      }, vec.__i * spread);
+    }
+  }
+
+  function startIdle() {
+    if (reduceMotion) return;
+    // detak jantung halus + goyang pelan setelah hati terbentuk
+    beat = gsap.timeline({ repeat: -1, repeatDelay: 0.5 });
+    beat.to(group.scale, { x: 1.07, y: 1.07, z: 1.07, duration: 0.18, ease: "power2.out" })
+        .to(group.scale, { x: 1, y: 1, z: 1, duration: 0.22, ease: "power2.in" })
+        .to(group.scale, { x: 1.04, y: 1.04, z: 1.04, duration: 0.14, ease: "power2.out" })
+        .to(group.scale, { x: 1, y: 1, z: 1, duration: 0.3, ease: "power2.in" });
+    sway = gsap.to(group.rotation, {
+      y: 0.35, duration: 3.2, ease: "sine.inOut", yoyo: true, repeat: -1
+    });
+  }
+
+  build();
+  document.getElementById("replay").addEventListener("click", build);
+
+  // ---------- Render loop ----------
+  function render() {
+    for (var j = 0; j < count; j++) {
+      var v = vertices[j];
+      positions[j * 3] = v.x;
+      positions[j * 3 + 1] = v.y;
+      positions[j * 3 + 2] = v.z;
+    }
+    geometry.attributes.position.needsUpdate = true;
+
+    if (!reduceMotion && !sway) {
+      // sebelum hati selesai, putar sedikit supaya terasa 3D
+      group.rotation.y = Math.sin(performance.now() / 2500) * 0.18;
+    }
+    renderer.render(scene, camera);
+    requestAnimationFrame(render);
+  }
+  render();
+})();
+</script>
+</body>
+</html>
